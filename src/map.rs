@@ -187,6 +187,61 @@ pub struct HashMap<K, V, S = DefaultHashBuilder, A: Allocator = Global> {
     pub(crate) table: RawTable<(K, V), A>,
 }
 
+impl<K: Clone + Eq + Hash, V, S: BuildHasher + Default, A: Allocator + Clone + Default>
+    HashMap<K, V, S, A>
+{
+    /// Creates a new HashMap by applying a function over `(K, V)` entries.
+    ///
+    /// ```
+    /// let mut map = HashMap::new();
+    /// assert_eq!(map.insert("Monday", 0), None);
+    //  let day_len = map.map_entries(|(day, _number)| day.len());
+    /// assert_eq!(day_len["Monday"], 6);
+    /// ```
+    pub fn map_entries<W, F>(&self, f: F) -> HashMap<K, W, S, A>
+    where
+        F: Fn(&K, &V) -> W,
+    {
+        // TODO: We should be able to avoid hashing since we have a Vec<Hash> somewhere
+        // TODO: We can probably run the map in parallel by chunking the keys
+
+        // HashMap {
+        //     hash_builder: self.hash_builder.clone(),
+        //     table: self.table.clone(),
+        // }
+
+        let out: HashMap<K, W, S, A> = self
+            .into_iter()
+            .map(|(k, v)| (k.clone(), f(k, v)))
+            .collect();
+        out
+    }
+
+    /// Creates a new HashMap by applying a function over values `V` while retaining the keys.
+    ///
+    /// ```
+    /// let mut map = HashMap::new();
+    /// assert_eq!(map.insert("Monday", 0), None);
+    //  let day_len = map.map_entries(|(day, _number)| day.len());
+    /// assert_eq!(day_len["Monday"], 6);
+    /// ```
+    pub fn map_values<W, F>(&self, f: F) -> HashMap<K, W, S, A>
+    where
+        F: Fn(&V) -> W,
+    {
+        // TODO: We should be able to avoid hashing since we have a Vec<Hash> somewhere
+        // TODO: We can probably run the map in parallel by chunking the keys
+
+        // HashMap {
+        //     hash_builder: self.hash_builder.clone(),
+        //     table: self.table.clone(),
+        // }
+
+        let out: HashMap<K, W, S, A> = self.into_iter().map(|(k, v)| (k.clone(), f(v))).collect();
+        out
+    }
+}
+
 impl<K: Clone, V: Clone, S: Clone, A: Allocator + Clone> Clone for HashMap<K, V, S, A> {
     fn clone(&self) -> Self {
         HashMap {
@@ -6395,7 +6450,11 @@ mod test_map {
                     return Err(format!(
                         "Value is not equal to expected,\nvalue: `{:?}`,\nexpected: \
                         `CheckedCloneDrop {{ panic_in_clone: {}, panic_in_drop: {}, dropped: {}, data: {:?} }}`",
-                        value, panic_in_clone, panic_in_drop, false, fun(check_count)
+                        value,
+                        panic_in_clone,
+                        panic_in_drop,
+                        false,
+                        fun(check_count)
                     ));
                 }
                 check_count += 1;
@@ -6629,6 +6688,54 @@ mod test_map {
         assert!(
             HashMap::<u32, u32>::with_capacity(1).allocation_size() > core::mem::size_of::<u32>()
         );
+    }
+
+    #[test]
+    fn map_entries_0() {
+        let days = HashMap::<&str, u8>::from([
+            ("Monday", 0),
+            ("Tuesday", 1),
+            ("Wednesday", 2),
+            ("Thursday", 3),
+            ("Friday", 4),
+            ("Saturday", 5),
+            ("Sunday", 6),
+        ]);
+
+        // This rehashes
+        let day_len: HashMap<&str, usize> = days
+            .clone()
+            .into_iter()
+            .map(|(day, _n)| (day, day.len()))
+            .collect();
+        // This does not
+        let day_len_2: HashMap<&str, usize> = days.map_entries(|day, _n| day.len());
+
+        assert_eq!(day_len, day_len_2);
+    }
+
+    #[test]
+    fn map_values_0() {
+        let days = HashMap::<&str, u8>::from([
+            ("Monday", 0),
+            ("Tuesday", 1),
+            ("Wednesday", 2),
+            ("Thursday", 3),
+            ("Friday", 4),
+            ("Saturday", 5),
+            ("Sunday", 6),
+        ]);
+
+        // This rehashes
+        let day_len: HashMap<&str, usize> = days
+            .clone()
+            .into_iter()
+            .map(|(day, n)| (day, (n + 1) as usize))
+            .collect();
+        // This does not
+        let day_len_2: HashMap<&str, usize> = days.map_values(|n| (n + 1) as usize);
+
+        assert_eq!(day_len, day_len_2);
     }
 }
 
